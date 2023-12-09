@@ -1,8 +1,10 @@
+from bisect import bisect_left, insort
+from queue import Empty, PriorityQueue
+import time
 import numpy as np
-import timeit
 import random
-from solver import Solver
-import sys, getopt
+import heuristics
+from actions import up, down, left, right
 
 def shuffleGrid(grid_data, n):
     """
@@ -32,69 +34,108 @@ def validateGrid(grid_data):
     
     return True if count % 2 == 0 else False
 
-def hScore(shuffle_grid, goal_grid):
-    """
-    heuristic function that compares the current state and the goal state
-    h-score will be determine by the number of misplaced tiles 
-    """
+class Node(object): # pylint: disable=too-few-public-methods
+	def __init__(self, state, parent, action_taken):
+		self.state = state
+		self.parent = parent
+		self.action_taken = action_taken
+		self.num_parents = 0 if parent == None else parent.num_parents + 1
 
-    print("heuristic value")
+	# ordering does not matter, needed for use in priority queue when priorities are equal
+	def __lt__(self, other): return False 
+	
+def _bisect_index(collection, value):
+	"""
+	Searches collection for value using binary search, returning the index of value or None.
+	collection _must_ be sorted!
+	"""
+	for thing in collection:
+		print(thing, value)
+	i = bisect_left(collection, value)
+	if i != len(collection) and collection[i] == value:
+		return i
+	return None
+	
+def _state_is_valid(state, closed_set):
+	return (state is not None and 
+			_bisect_index(closed_set, state) == None)
 
-     
-def solve(shuffle_grid, goal_grid):
-    g_score = 0 # number of moves
-    f_score = 0 # g_score + h_score
+def _search(initial_state, desired_state, open_set_get, open_set_add):
+	"""
+	Avoids repetition of the generic parts of all of the search strategies. 
+	The search strategies turn out to be similar except in the way the open set data structure works. 
+	open_set_get: () -> Node. Pulls the next relevant node from the open set.
+	open_set_add: Node -> (). Adds a successor node to the open set.
+	reverse_add_calls: Adds successors to open_set in order right, down, left, up instead of up, left, down, right.
+	"""
+	def open_set_add_if_new(successor_state, action_taken):
+		if _state_is_valid(successor_state, closed_set):
+			open_set_add(Node(successor_state, current_node, action_taken))
 
-    print("solving...")
-    return shuffle_grid
+	def reconstruct_actions(node):
+		actions = []
+		while node.action_taken != None:
+			actions.append(node.action_taken)
+			node = node.parent
+		return actions
 
-def a_star(init_state, goal_state, max_iter, heuristic):
-    solver = Solver(init_state, goal_state, heuristic, max_iter)
-    path = solver.solve_a_star()
-    print(len(path))
-    if len(path) == 0:
-        exit(1)
-    
-    init_idx = init_state.flatten().tolist().index(0)
-    init_i, init_j = init_idx // goal_state.shape[0], init_idx % goal_state.shape[0]
-    
-    print()
-    print('INITIAL STATE')
-    for i in range(goal_state.shape[0]):
-        print(init_state[i, :]) 
-    print()
-    for node in reversed(path):
-        cur_idx = node.get_state().index(0)
-        cur_i, cur_j = cur_idx // goal_state.shape[0], cur_idx % goal_state.shape[0]
-        
-        new_i, new_j = cur_i - init_i, cur_j - init_j
-        if new_j == 0 and new_i == -1:
-            print('Moved UP    from ' + str((init_i, init_j)) + ' --> ' + str((cur_i, cur_j)))
-        elif new_j == 0 and new_i == 1:
-            print('Moved DOWN  from ' + str((init_i, init_j)) + ' --> ' + str((cur_i, cur_j)))
-        elif new_i == 0 and new_j == 1:
-            print('Moved RIGHT from ' + str((init_i, init_j)) + ' --> ' + str((cur_i, cur_j)))
-        else:
-            print('Moved LEFT  from ' + str((init_i, init_j)) + ' --> ' + str((cur_i, cur_j)))
-        print('Score using ' + heuristic + ' heuristic is ' + str(node.get_score() - node.get_level()) + ' in level ' + str(node.get_level()))
-    
-        init_i, init_j = cur_i, cur_j
-        
-        for i in range(goal_state.shape[0]):
-            print(np.array(node.get_state()).reshape(goal_state.shape[0], goal_state.shape[0])[i, :]) 
-        print()
-    print(solver.get_summary())
+	closed_set = []
+	current_node = Node(initial_state, None, None)
+	while current_node.state is not desired_state:
+		insort(closed_set, current_node.state) # adds state to closed_set while maintaining sorted order.
+		
+		open_set_add_if_new(up(current_node.state), "Up;")
+		open_set_add_if_new(left(current_node.state), "Left;")
+		open_set_add_if_new(down(current_node.state), "Down;")
+		open_set_add_if_new(right(current_node.state), "Right;")
+
+		try:
+			current_node = open_set_get()
+		except (IndexError, Empty):
+			return len(closed_set), None
+
+	return len(closed_set), reconstruct_actions(current_node)
+
+def a_star(initial_state, desired_state, heuristic=heuristics.manhattan_distance):
+	"""
+	Like greedy best-first, except considers the cost already incurred to reach the current state in addition
+	  to the value of the heuristic.
+	This results in interesting behaviour where promising paths can be pursued relentlessly like 
+		depth-first search, but when paths appear similar each of them are considered. 
+	Complete, optimal because heuristic is monotone, very fast (fastest informed) for this puzzle.
+	"""
+	def open_set_add(node):
+		priority = node.num_parents + heuristic(node.state, desired_state)
+		open_set.put( (priority, node) )
+
+	def open_set_get():
+		_, node = open_set.get_nowait()
+		return node
+
+	open_set = PriorityQueue() # contains (priority, Node)
+	return _search(initial_state, desired_state, open_set_get, open_set_add)
+
+def dijkstra(initial_state, desired_state):
+	"""
+	Like breadth-first search in spirit, except expands nodes with the least cost incurred so far
+		first rather than nodes with the least parents first. As all actions have equal cost in this 
+		puzzle, it is equivalent to breadth-first search, but may expand nodes slightly differently 
+		due to how the PriorityQueue data structure sorts nodes of equal priority. 
+	It is equivalent to A* with a heuristic of 0 in all cases.
+	Complete, optimal, slow for this puzzle.
+	"""
+	return a_star(initial_state, desired_state, heuristic=lambda current_state, desired_state: 0)
 
 if __name__ == '__main__':
     max_iter = 5000
-    heuristic = "linear_conflict"
+    heuristic = "manhattan_distance"
     algorithm = "a_star"
     n = 3
     
     goal_state = [
-            [1, 2, 3],
-            [4, 5, 6,],
-            [7, 8, 0],
+            ['1', '2', '3'],
+            ['4', '5', '6',],
+            ['7', '8', '0'],
         ]
     
     #goal_state = [
@@ -104,12 +145,16 @@ if __name__ == '__main__':
     #        [13, 14, 15, 0],
     #    ]
     
-    init_state = shuffleGrid(goal_state, n)
+    initial_state = shuffleGrid(goal_state, n)
+    desired_state = goal_state
+	
+    start_time = time.process_time() # does not include time process was swapped out
 
-    init_state = np.array(init_state).reshape(n, n)
-    goal_state = np.array(goal_state).reshape(n, n)
-    
-    a_star(init_state, goal_state, max_iter, heuristic)
+    if (heuristic == ''):
+        number_of_nodes, solution = dijkstra(initial_state, desired_state)
+    else:
+        number_of_nodes, solution = a_star(initial_state, desired_state, heuristics.manhattan_distance)
+    print("Time taken: " + str(time.process_time() - start_time) + " secs")
     
     
 
