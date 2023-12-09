@@ -72,7 +72,6 @@ def is_invalid_move(grid_node, move):
     return False
 
 def move_empty_tile(grid_node, move):
-    
     if (is_invalid_move(grid_node, move)):
         return None
 
@@ -88,7 +87,7 @@ def move_empty_tile(grid_node, move):
     
     new_grid_node.empty_tile_position = tile_to_move_position
 
-    return new_grid_node.grid_values
+    return new_grid_node
 
 class GridNode():    
     def __init__(self, parent=None, grid_values=None, empty_tile_position=None):
@@ -101,7 +100,9 @@ class GridNode():
         self.f = 0
 
     def __eq__(self, other):
-        return self.grid_values == other.grid_values
+        grid1 = deepcopy(self.grid_values)
+        grid2 = deepcopy(other.grid_values)
+        return np.array_equal(grid1, grid2)
 
 def astar(grid, start, end):
 
@@ -126,6 +127,7 @@ def astar(grid, start, end):
 
     # Loop until you find the end
     while len(open_list) > 0:
+    #for i in range(3):
 
         # Get the current node
         current_node = open_list[0]
@@ -139,53 +141,67 @@ def astar(grid, start, end):
         open_list.pop(current_index)
         closed_list.append(current_node)
 
-        ## Found the goal
-        #if current_node == end_grid_node:
-        #    path = []
-        #    current = current_node
-        #    while current is not None:
-        #        path.append(current.grid_values)
-        #        current = current.parent
-        #    return path[::-1] # Return reversed path
+        # Found the goal
+        if current_node == end_grid_node:
+            path = []
+            current = current_node
+            while current is not None:
+                path.append(current.grid_values)
+                current = current.parent
+            return path[::-1] # Return reversed path
 
         # Generate children
         children = []
+        #print("PRINTING CURRENT CHILDREN")
         for move in [move_up, move_down, move_left, move_right]: # Adjacent squares
 
             # Get grid node values
             new_node = deepcopy(current_node)
-            new_grid_values = move_empty_tile(new_node, move)
+            new_grid_node = move_empty_tile(new_node, move)
             
             # Make sure move is valid; new_grid_values is none if the move is invalid
-            if (new_grid_values is None):
+            if (new_grid_node is None):
                 continue
 
-            # Create new node
-            new_node = GridNode(current_node, new_grid_values, new_node.empty_tile_position)
+            #print(current_node.grid_values, 'CURRENT')
+            #print(new_grid_node.grid_values, 'NEW')
+            #print('----------------------------')
 
             # Append
-            children.append(new_node)
+            children.append(deepcopy(new_grid_node))
             
-        ## Loop through children
-        #for child in children:
-#
-        #    # Child is on the closed list
-        #    for closed_child in closed_list:
-        #        if child == closed_child:
-        #            continue
-#
-        #    # Create the f, g, and h values
-        #    child.g = current_node.g + 1
-        #    child.h = ((child.position[0] - end_grid_node.position[0]) ** 2) + ((child.position[1] - end_grid_node.position[1]) ** 2)
-        #    child.f = child.g + child.h
-#
-        #    # Child is already in the open list
-        #    for open_node in open_list:
-        #        if child == open_node and child.g > open_node.g:
-        #            continue
-#
-        #    # Add the child to the open list
-        #    open_list.append(child)
+        # Loop through children
+        for child in children:
+
+            # Child is on the closed list
+            for closed_child in closed_list:
+                if child.__eq__(closed_child):
+                    continue
+
+            # Create the f, g, and h values
+            child.g = current_node.g + 1
+            #child.h = ((child.position[0] - end_grid_node.position[0]) ** 2) + ((child.position[1] - end_grid_node.position[1]) ** 2)
+            child.h = count_misplaced_tiles(child, end_grid_node)
+            child.f = child.g + child.h
+            # Child is already in the open list
+            for open_node in open_list:
+                if child == open_node and child.g > open_node.g:
+                    continue
+            #print(child.grid_values)
+            #print('=========================')
+            # Add the child to the open list
+            open_list.append(deepcopy(child))
+
+def count_misplaced_tiles(current_node, goal_node):
+    count = 0
+    grid1 = current_node.grid_values.flatten()
+    grid2 = goal_node.grid_values.flatten()
+    
+    for i in range(len(grid1)):
+        if grid1[i] == grid2[i]:
+            count += 1
+
+    return count
 
 if __name__ == '__main__':
     goal_grid = [
@@ -195,7 +211,8 @@ if __name__ == '__main__':
         ]
     
     shuffle_grid = shuffleGrid(goal_grid)
-    
+    goal_grid = np.array(goal_grid).reshape(3, 3)
+
     solve(shuffle_grid, goal_grid)
     
     
