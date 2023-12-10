@@ -1,89 +1,95 @@
-import numpy as np
-import timeit
+import copy
 import random
-from solver import Solver
-import sys, getopt
-
 def shuffleGrid(grid_data, n):
     """
    transform 2D array into 1D array, then shuffles and returns
    shuffle 2D array
     """
-    array = np.array(grid_data).flatten()
-    random.shuffle(array)
-    shuffled_grid = array.reshape((n, n))
-    return shuffled_grid
+    for i in range(n - 1):
+        random.shuffle(grid_data[i])
 
-def validateGrid(grid_data):
-    """
-    verifies that a shuffled grid is solvable by transforming
-    a 1D array and contains an even number of inversions
-    """
-   
-    # inversions consists of a current position and every position after it
-    # checking if the current value is larger then the observation value
-    array = np.array(grid_data).flatten()
+    random.shuffle(grid_data)
     
-    count = 0
-    for i in range(len(array) - 1):
-        for j in range(i + 1, len(array)):
-            if (array[i] > array[j]):
-                count += 1
-    
-    return True if count % 2 == 0 else False
-
-def hScore(shuffle_grid, goal_grid):
-    """
-    heuristic function that compares the current state and the goal state
-    h-score will be determine by the number of misplaced tiles 
-    """
-
-    print("heuristic value")
+    return grid_data
 
      
 def solve(shuffle_grid, goal_grid):
-    g_score = 0 # number of moves
-    f_score = 0 # g_score + h_score
-
     print("solving...")
-    return shuffle_grid
+    return a_star(shuffle_grid, goal_grid)
 
-def a_star(init_state, goal_state, max_iter, heuristic):
-    solver = Solver(init_state, goal_state, heuristic, max_iter)
-    path = solver.solve_a_star()
-    print(len(path))
-    if len(path) == 0:
-        exit(1)
-    
-    init_idx = init_state.flatten().tolist().index(0)
-    init_i, init_j = init_idx // goal_state.shape[0], init_idx % goal_state.shape[0]
-    
-    print()
-    print('INITIAL STATE')
-    for i in range(goal_state.shape[0]):
-        print(init_state[i, :]) 
-    print()
-    for node in reversed(path):
-        cur_idx = node.get_state().index(0)
-        cur_i, cur_j = cur_idx // goal_state.shape[0], cur_idx % goal_state.shape[0]
-        
-        new_i, new_j = cur_i - init_i, cur_j - init_j
-        if new_j == 0 and new_i == -1:
-            print('Moved UP    from ' + str((init_i, init_j)) + ' --> ' + str((cur_i, cur_j)))
-        elif new_j == 0 and new_i == 1:
-            print('Moved DOWN  from ' + str((init_i, init_j)) + ' --> ' + str((cur_i, cur_j)))
-        elif new_i == 0 and new_j == 1:
-            print('Moved RIGHT from ' + str((init_i, init_j)) + ' --> ' + str((cur_i, cur_j)))
-        else:
-            print('Moved LEFT  from ' + str((init_i, init_j)) + ' --> ' + str((cur_i, cur_j)))
-        print('Score using ' + heuristic + ' heuristic is ' + str(node.get_score() - node.get_level()) + ' in level ' + str(node.get_level()))
-    
-        init_i, init_j = cur_i, cur_j
-        
-        for i in range(goal_state.shape[0]):
-            print(np.array(node.get_state()).reshape(goal_state.shape[0], goal_state.shape[0])[i, :]) 
-        print()
-    print(solver.get_summary())
+class Node:
+    def __init__(self,data,level,f_score):
+        """ Initialize the node with the data, level of the node and the calculated fvalue """
+        self.data = data
+        self.level = level
+        self.f_score = f_score
+
+def get_f_score(start, goal):
+    score = 0
+    n = len(start.data)
+
+    for i in range(0, n):
+        for j in range(0, n):
+            if start.data[i][j] != goal[i][j] and start [i][j] != 0:
+                score += 1
+
+    return score
+
+def get_children(current_node):
+    x, y = current_node.find(current_node.data, '0')
+
+    children = []
+    moves = [[x,y-1],[x,y+1],[x-1,y],[x+1,y]]
+
+    for move in moves:
+        child = move(current_node.data, x, y, move[0], move[1])
+        if child is not None:
+                child_node = Node(child, current_node.level + 1, 0)
+                children.append(child_node)
+    return children
+
+def move(node_data, x1, y1, x2, y2):
+    if x2 >= 0 and x2 < len(node_data) and y2 >= 0 and y2 < len(node_data):
+        temp_data = []
+        temp_data = copy(node_data)
+        temp = temp_data[x2][y2]
+        temp_data[x2][y2] = temp_data[x1][y1]
+        temp_data[x1][y1] = temp
+        return temp_data
+    return None
+
+
+def a_star(init_state, goal_state):
+    n_size = len(init_state)
+    open_list = []
+    closed_list = []
+
+    start = Node(init_state,0,0)
+    start.f_score = get_f_score(start, goal_state)
+    """ Put the start node in the open list"""
+    open_list.append(start)
+    print("\n\n")
+    while True:
+        cur = open_list[0]
+        print("")
+        print("  | ")
+        print("  | ")
+        print(" \\\'/ \n")
+        for i in cur.data:
+            for j in i:
+                print(j,end=" ")
+            print("")
+        """ If the difference between current and goal node is 0 we have reached the goal node"""
+        if(get_f_score(cur.data, goal_state) == 0):
+            break
+        for i in cur.get_children():
+            i.f_score = get_f_score(i, goal_state)
+            open_list.append(i)
+        closed_list.append(cur)
+        open_list.pop(0)
+
+        """ sort the opne list based on f value """
+        open_list.sort(key = lambda x:x.f_score, reverse=False)
 
 if __name__ == '__main__':
     max_iter = 5000
@@ -104,12 +110,6 @@ if __name__ == '__main__':
     #        [13, 14, 15, 0],
     #    ]
     
-    init_state = shuffleGrid(goal_state, n)
-
-    init_state = np.array(init_state).reshape(n, n)
-    goal_state = np.array(goal_state).reshape(n, n)
+    initial_state = shuffleGrid(goal_state, n)
     
-    a_star(init_state, goal_state, max_iter, heuristic)
-    
-    
-
+    solve(initial_state, goal_state)
